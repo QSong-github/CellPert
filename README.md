@@ -1,4 +1,5 @@
-# scGVP: Single-Cell Graph Variational Perturbation Model
+# scGVP: Graph Variational learning with structure priors enables cross-dataset perturbation response prediction
+
 
 scGVP is a graph neural network–based variational autoencoder framework for predicting single-cell transcriptomic responses to chemical perturbations. By modeling gene–gene interaction networks with Graph Isomorphism Networks (GIN) and a VAE latent space, scGVP transfers perturbation effects from reference datasets to unseen cell states, enabling a suite of downstream biological analyses.
 
@@ -365,42 +366,6 @@ results = task6.perform_complete_analysis(
 
 **Outputs:** sensitivity heatmap, module analysis plots, co-response network, enrichment text
 
----
-
-## Project Structure
-
-```
-scGVP/
-├── environment.yml                       # Conda environment (Python 3.11, CUDA 12.9)
-├── README.md
-├── src/                                  # Training code & model weights
-│   ├── main.py                           # Training entry point
-│   ├── model.py                          # GINVAE model definition
-│   ├── dataset.py                        # Dataset loader
-│   ├── graphbuilder.py                   # Gene graph construction
-│   ├── metrics.py                        # Training metrics
-│   ├── utils.py                          # Utility functions
-│   ├── run_all.sh                        # Training launcher script
-│   └── best_gin_vae_model_node_level.pth # ← place downloaded weights here
-├── data/                                 # ← place extracted datasets here
-│   ├── merged_all_965_with_morgan.h5ad   #   (from lincs.zip)
-│   └── tahoe/
-│       ├── p1_with_morgan.h5ad           #   (from tahoe.zip)
-│       └── ...
-└── downstreamTask/                       # Inference & downstream analysis
-    ├── model.py                          # GINVAE (inference copy)
-    ├── dataset.py                        # ChunkedGeneGraphDataset
-    ├── graphbuilder.py                   # Graph construction utilities
-    ├── metrics.py                        # Evaluation metrics
-    ├── utils.py                          # Utility functions
-    ├── alltask.py                        # Master script (all 6 tasks)
-    ├── task1.py / task1.ipynb            # Cross-dataset consistency
-    ├── task2.py / task2.ipynb            # Drug-disease gene network
-    ├── task3.py / task3.ipynb            # Drug repurposing
-    ├── task4.py / task4.ipynb            # Drug synergy prediction
-    ├── task5.py / task5.ipynb            # Disease gene prioritization
-    └── task6.py / task6.ipynb            # Perturbation sensitivity network
-```
 
 ---
 
@@ -410,10 +375,11 @@ If you use scGVP in your research, please cite:
 
 ```bibtex
 @article{scGVP2024,
-  title   = {scGVP: Single-Cell Graph Variational Perturbation Model},
+  title   = {scGVP: Graph Variational learning with structure priors enables cross-dataset perturbation response prediction<img width="468" height="47" alt="image" src="https://github.com/user-attachments/assets/245a837c-6810-4eb5-990f-52d3bcfd5beb" />
+},
   author  = {},
   journal = {},
-  year    = {2024}
+  year    = {2026}
 }
 ```
 
@@ -421,4 +387,4 @@ If you use scGVP in your research, please cite:
 
 ## License
 
-This project is released under the MIT License. See `LICENSE` for details.
+MIT License © Qianqian Song Lab
