@@ -178,28 +178,13 @@ with zipfile.ZipFile(tahoe_zip, 'r') as z:
 scGVP/
 ├── src/
 │   └── best_gin_vae_model_node_level.pth
-└── data/
-    ├── merged_all_965_with_morgan.h5ad   # LINCS (from lincs.zip)
-    └── tahoe/
-        ├── p1_with_morgan.h5ad
-        ├── p2_with_morgan.h5ad
-        ├── ...
-        └── p14_with_morgan.h5ad
+├── lincs/merged_all_965_with_morgan.h5ad   # LINCS (from lincs.zip)
+└── minitahoe/
+    ├── p1_with_morgan.h5ad
+    ├── p2_with_morgan.h5ad
+    ├── ...
+    └── p14_with_morgan.h5ad
 ```
-
-### Dataset Overview
-
-**LINCS Dataset** (`merged_all_965_with_morgan.h5ad`)
-- ~965 unique chemical perturbations (canonical SMILES)
-- Multiple human cell lines
-- Paired control / perturbed single-cell profiles
-- Key metadata columns: `condition` (control/perturb), `canonical_smiles`, `cell_type`, `morgan_fp`
-
-**Tahoe Dataset** (14 plates, `p1_with_morgan.h5ad` – `p14_with_morgan.h5ad`)
-- ~363 unique chemical perturbations (SMILES stored in `sub_ptrb`)
-- 14 experimental plates with partially overlapping drug libraries
-- Paired control / perturbed single-cell profiles
-- Key metadata columns: `condition`, `sub_ptrb`, `morgan_fp`
 
 ---
 
