@@ -107,8 +107,8 @@ All datasets and the pre-trained model weights are hosted on HuggingFace:
 | File | Type | Description |
 |------|------|-------------|
 | `best_gin_vae_model_node_level.pth` | Model weights | Pre-trained GINVAE checkpoint |
-| `lincs.zip` | Dataset (zip) | LINCS dataset — ~965 drugs, multiple cell types |
-| `tahoe.zip` | Dataset (zip) | Tahoe mini dataset — 14 plates, ~363 drugs |
+| `lincs.zip` | Dataset (zip) | LINCS dataset |
+| `tahoe.zip` | Dataset (zip) | Tahoe mini dataset — 14 plates |
 
 ### Step 1 — Download model weights
 
