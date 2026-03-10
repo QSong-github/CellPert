@@ -67,7 +67,7 @@ Output: Predicted perturbed gene expression
 
 ```bash
 # Clone the repository
-git clone https://github.com/<your-org>/scGVP.git
+https://github.com/QSong-github/scGVP.git
 cd scGVP
 
 # Create the conda environment from the provided file
@@ -77,23 +77,6 @@ conda env create -f environment.yml
 conda activate info
 ```
 
-The `environment.yml` file pins all dependencies to exact versions, including:
-
-| Package | Version |
-|---------|---------|
-| Python | 3.11 |
-| PyTorch | 2.9.0 (CUDA 12.9) |
-| torch-geometric | 2.6.1 |
-| scanpy | 1.11.4 |
-| anndata | 0.12.1 |
-| rdkit | 2023.9.5 |
-| scikit-learn | 1.7.1 |
-| umap-learn | 0.5.9 |
-| networkx | 3.2.1 |
-| statsmodels | 0.14.5 |
-| huggingface-hub | 0.22.2 |
-
-> **Note:** The environment uses Tsinghua University mirror channels. If you are outside China, you may remove the mirror lines from `environment.yml` and replace them with standard `conda-forge` and `pytorch` channels before creating the environment.
 
 ---
 
