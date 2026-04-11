@@ -1,7 +1,7 @@
-# scGVP: Graph Variational learning with structure priors enables cross-dataset perturbation response prediction
+# CellPert: Graph Variational learning with structure priors enables cross-dataset perturbation response prediction
 
 
-scGVP is a graph neural network–based variational autoencoder framework for predicting single-cell transcriptomic responses to chemical perturbations. By modeling gene–gene interaction networks with Graph Isomorphism Networks (GIN) and a VAE latent space, scGVP transfers perturbation effects from reference datasets to unseen cell states, enabling a suite of downstream biological analyses.
+CellPert is a graph neural network–based variational autoencoder framework for predicting single-cell transcriptomic responses to chemical perturbations. By modeling gene–gene interaction networks with Graph Isomorphism Networks (GIN) and a VAE latent space, CellPert transfers perturbation effects from reference datasets to unseen cell states, enabling a suite of downstream biological analyses.
 
 ---
 
@@ -19,7 +19,7 @@ scGVP is a graph neural network–based variational autoencoder framework for pr
 
 ## Model Architecture
 
-scGVP is built around **GINVAE** (Graph Isomorphism Network Variational AutoEncoder):
+CellPert is built around **GINVAE** (Graph Isomorphism Network Variational AutoEncoder):
 
 ```
 Input: Single-cell gene expression + STRING PPI graph
@@ -67,8 +67,8 @@ Output: Predicted perturbed gene expression
 
 ```bash
 # Clone the repository
-https://github.com/QSong-github/scGVP.git
-cd scGVP
+https://github.com/QSong-github/CellPert.git
+cd CellPert
 
 # Create the conda environment from the provided file
 conda env create -f environment.yml
@@ -84,7 +84,7 @@ conda activate info
 
 All datasets and the pre-trained model weights are hosted on HuggingFace:
 
-**[https://huggingface.co/datasets/Mike2481/Dataset4scGVP/tree/main](https://huggingface.co/datasets/Mike2481/Dataset4scGVP/tree/main)**
+**[https://huggingface.co/datasets/Mike2481/Dataset4CellPert/tree/main](https://huggingface.co/datasets/Mike2481/Dataset4CellPert/tree/main)**
 
 ### Available Files
 
@@ -99,7 +99,7 @@ All datasets and the pre-trained model weights are hosted on HuggingFace:
 Download `best_gin_vae_model_node_level.pth` manually from the HuggingFace page above and place it under `src/`:
 
 ```
-scGVP/
+CellPert/
 └── src/
     └── best_gin_vae_model_node_level.pth
 ```
@@ -110,7 +110,7 @@ Or use `huggingface_hub`:
 from huggingface_hub import hf_hub_download
 
 hf_hub_download(
-    repo_id="Mike2481/Dataset4scGVP",
+    repo_id="Mike2481/Dataset4CellPert",
     filename="best_gin_vae_model_node_level.pth",
     repo_type="dataset",
     local_dir="./src"
@@ -137,7 +137,7 @@ os.makedirs('./data/tahoe', exist_ok=True)
 
 # LINCS dataset
 lincs_zip = hf_hub_download(
-    repo_id="Mike2481/Dataset4scGVP",
+    repo_id="Mike2481/Dataset4CellPert",
     filename="lincs.zip",
     repo_type="dataset",
     local_dir="./data"
@@ -147,7 +147,7 @@ with zipfile.ZipFile(lincs_zip, 'r') as z:
 
 # Tahoe dataset
 tahoe_zip = hf_hub_download(
-    repo_id="Mike2481/Dataset4scGVP",
+    repo_id="Mike2481/Dataset4CellPert",
     filename="tahoe.zip",
     repo_type="dataset",
     local_dir="./data"
@@ -159,7 +159,7 @@ with zipfile.ZipFile(tahoe_zip, 'r') as z:
 ### Expected data layout after extraction
 
 ```
-scGVP/
+CellPert/
 ├── src/
 │   └── best_gin_vae_model_node_level.pth
 ├── lincs/merged_all_965_with_morgan.h5ad   # LINCS (from lincs.zip)
@@ -213,7 +213,7 @@ print(f'Predicted expression shape: {predicted_expression.shape}')
 
 ## Downstream Tasks
 
-scGVP supports six downstream analysis tasks. Each task has a corresponding Python module and Jupyter notebook in `downstreamTask/`.
+CellPert supports six downstream analysis tasks. Each task has a corresponding Python module and Jupyter notebook in `downstreamTask/`.
 
 ### Task 1: Cross-Dataset Consistency Analysis
 **Script:** `task1.py` | **Notebook:** `task1.ipynb`
@@ -354,11 +354,11 @@ results = task6.perform_complete_analysis(
 
 ## Citation
 
-If you use scGVP in your research, please cite:
+If you use CellPert in your research, please cite:
 
 ```bibtex
-@article{scGVP2024,
-  title   = {scGVP: Graph Variational learning with structure priors enables cross-dataset perturbation response prediction<img width="468" height="47" alt="image" src="https://github.com/user-attachments/assets/245a837c-6810-4eb5-990f-52d3bcfd5beb" />
+@article{CellPert2024,
+  title   = {CellPert: Graph Variational learning with structure priors enables cross-dataset perturbation response prediction<img width="468" height="47" alt="image" src="https://github.com/user-attachments/assets/245a837c-6810-4eb5-990f-52d3bcfd5beb" />
 },
   author  = {},
   journal = {},
