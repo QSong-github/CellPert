@@ -19,7 +19,7 @@ CellPert is a graph neural network–based variational autoencoder framework for
 
 ## Model Architecture
 
-CellPert is built around **GINVAE** (Graph Isomorphism Network Variational AutoEncoder):
+CellPert is built on Graph Isomorphism Network Variational AutoEncoder:
 
 ```
 Input: Single-cell gene expression + STRING PPI graph
