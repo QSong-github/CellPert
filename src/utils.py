@@ -10,11 +10,11 @@ def set_seed(seed):
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     
-
+    # force CUDA to use deterministic algorithms
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     
-    # PyTorch 1.8+
+    # PyTorch 1.8+ needs this as well
     torch.use_deterministic_algorithms(True, warn_only=True)
 
 class BatchSizeWarmupScheduler:
@@ -26,7 +26,7 @@ class BatchSizeWarmupScheduler:
     
     def step_epoch(self):
         if self.current_epoch < self.warmup_epochs:
-            # warmup
+            # warmup: start from a very small learning rate
             lr = self.target_lr * (self.current_epoch + 1) / self.warmup_epochs
         else:
             lr = self.target_lr
@@ -38,6 +38,7 @@ class BatchSizeWarmupScheduler:
         return lr
     
 def process_variable_size_batches_with_mask(all_recon, all_x, all_masks):
+    """Split a batch of varying sizes into whole samples, for per-sample correlations."""
     processed_samples_recon = []
     processed_samples_x = []
     
@@ -45,10 +46,12 @@ def process_variable_size_batches_with_mask(all_recon, all_x, all_masks):
         batch_size = recon_batch.size(0)
         
         for i in range(batch_size):
+            # valid nodes of sample i
             sample_mask = mask_batch[i]  # [max_nodes] boolean mask
             valid_node_count = sample_mask.sum().item()
             
             if valid_node_count > 0:
+                # keep only the valid nodes, as one contiguous sequence
                 sample_recon = recon_batch[i][sample_mask]  # [valid_nodes]
                 sample_x = x_batch[i][sample_mask]  # [valid_nodes]
                 

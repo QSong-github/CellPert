@@ -35,7 +35,7 @@ class GINEncoder(nn.Module):
         # First layer
         mlp = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
-            nn.LayerNorm(hidden_dim),  
+            nn.LayerNorm(hidden_dim),  # LayerNorm in place of a pre-ReLU normalisation
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(hidden_dim, hidden_dim)
@@ -59,7 +59,7 @@ class GINEncoder(nn.Module):
             
             # Skip connection with proper initialization
             skip_conn = nn.Linear(hidden_dim, hidden_dim)
-            nn.init.xavier_uniform_(skip_conn.weight, gain=0.5)  
+            nn.init.xavier_uniform_(skip_conn.weight, gain=0.5)  # small initialisation
             self.skip_connections.append(skip_conn)
         
         # Last layer
@@ -78,18 +78,19 @@ class GINEncoder(nn.Module):
         self.node_fc_mu = nn.Linear(hidden_dim, latent_dim)
         self.node_fc_logvar = nn.Linear(hidden_dim, latent_dim)
         
-
+        # initialisation
         nn.init.xavier_uniform_(self.node_fc_mu.weight)
         nn.init.constant_(self.node_fc_mu.bias, 0)
         nn.init.xavier_uniform_(self.node_fc_logvar.weight)
-        nn.init.constant_(self.node_fc_logvar.bias, -2)  
-
+        nn.init.constant_(self.node_fc_logvar.bias, -2)  # initialise to a small variance
+        
+        # learnable weight scale
         self.weight_scale = nn.Parameter(torch.tensor(1.0))
         
     def forward(self, x, edge_index, batch):
         skip_outs = []
         
-        # Store original expression values for weighting 
+        # store the original expression values for weighting, with a numerical guard
         original_expr = x.squeeze(-1)  # [total_nodes]
         
         # First layer with residual scaling
@@ -100,16 +101,16 @@ class GINEncoder(nn.Module):
         
         # Middle layers with improved skip connections
         for i in range(1, self.num_layers - 1):
-            identity = out  # residual
+            identity = out  # keep the input for the residual
             out = self.bns[i](self.convs[i](out, edge_index))
             out = F.relu(out)
             out = self.dropouts[i](out)
             
-            # skip connection 
+            # skip connection, as a weighted combination
             if i > 0 and len(skip_outs) > 0:
                 skip_proj = self.skip_connections[i-1](skip_outs[i-1])
-               
-                out = 0.7 * out + 0.3 * skip_proj + 0.1 * identity  
+                # learnable combination weights
+                out = 0.7 * out + 0.3 * skip_proj + 0.1 * identity  # multiple connections
             
             skip_outs.append(out)
         
@@ -127,12 +128,13 @@ class GINEncoder(nn.Module):
         
         # Node-level latent representations with constraint
         node_mu = self.node_fc_mu(out)
-        node_logvar = torch.clamp(self.node_fc_logvar(out), -10, 10)  
+        node_logvar = torch.clamp(self.node_fc_logvar(out), -10, 10)  # bound logvar
         
-
+        # graph-level representation
+        # softmax-normalised weights, which are stabler
         expr_weights = torch.abs(original_expr) + 1e-6
         
-
+        # graph-level representation per batch element
         unique_batch_indices = torch.unique(batch, sorted=True)
         graph_mu_list = []
         graph_logvar_list = []
@@ -144,7 +146,9 @@ class GINEncoder(nn.Module):
             curr_node_logvar = node_logvar[mask]
             curr_weights = expr_weights[mask]
             
+            # softmax normalisation of the weights
             if len(curr_weights) > 1:
+                # temperature controls how sharp the weight distribution is
                 temperature = 0.5
                 curr_weights_norm = F.softmax(curr_weights / temperature, dim=0)
             else:
@@ -152,10 +156,10 @@ class GINEncoder(nn.Module):
             
             curr_weights_norm = curr_weights_norm.unsqueeze(-1)
             
-
+            # weighted mean, with a numerical guard
             graph_mu_i = torch.sum(curr_node_mu * curr_weights_norm, dim=0, keepdim=True)
             
-            # log-sum-exp
+            # log-sum-exp on logvar, for numerical stability
             weighted_logvar = curr_node_logvar + torch.log(curr_weights_norm + 1e-8)
             graph_logvar_i = torch.logsumexp(weighted_logvar, dim=0, keepdim=True) - \
                            torch.log(torch.tensor(curr_node_logvar.size(0), device=curr_node_logvar.device))
@@ -166,7 +170,7 @@ class GINEncoder(nn.Module):
         graph_mu = torch.cat(graph_mu_list, dim=0)
         graph_logvar = torch.cat(graph_logvar_list, dim=0)
         
-     
+        # final numerical check
         graph_logvar = torch.clamp(graph_logvar, -10, 10)
         
         return node_mu, node_logvar, graph_mu, graph_logvar
@@ -353,10 +357,12 @@ class GINVAE(nn.Module):
         self.verbose = verbose
         
     def _print(self, message, force=False):
+        """Helper that controls printing."""
         if self.verbose or force:
             print(message)
             
     def _tqdm_write(self, message, force=False):
+        """Print through tqdm.write so the progress bar is not disturbed."""
         if self.verbose or force:
             tqdm.write(message)
     
@@ -417,6 +423,7 @@ class GINVAE(nn.Module):
         num_batches = (len(x_ref_dataset) + max_samples_per_batch - 1) // max_samples_per_batch
         
         with torch.no_grad():
+            # progress bar over batches
             batch_progress = tqdm(range(num_batches), 
                                 desc="Processing reference batches", 
                                 disable=not self.verbose)
@@ -425,7 +432,7 @@ class GINVAE(nn.Module):
                 start_idx = batch_idx * max_samples_per_batch
                 end_idx = min((batch_idx + 1) * max_samples_per_batch, len(x_ref_dataset))
                 
-             
+                # update the progress bar
                 batch_progress.set_postfix({
                     'samples': f"{start_idx}-{end_idx-1}",
                     'processed': processed_count
@@ -433,7 +440,7 @@ class GINVAE(nn.Module):
                 
                 batch_latent_data = []
                 
-            
+                # progress bar over samples, shown only in verbose mode
                 sample_range = range(start_idx, end_idx)
                 if self.verbose and len(sample_range) > 100:
                     sample_iter = tqdm(sample_range, 
@@ -645,7 +652,7 @@ class GINVAE(nn.Module):
             ptrb_samples = []
             total_filtered = 0
             
-         
+            # progress bar over chunk loading
             chunk_progress = tqdm(chunk_files, 
                                 desc="Loading chunks", 
                                 disable=not self.verbose)
@@ -688,7 +695,7 @@ class GINVAE(nn.Module):
             if group_type is not None and group_name is not None:
                 filtered_data = []
                 
-              
+                # progress bar over filtering
                 data_iter = tqdm(all_latent_data, 
                                desc=f"Filtering by {group_type}={group_name}", 
                                disable=not self.verbose)
@@ -730,7 +737,7 @@ class GINVAE(nn.Module):
         # Extract graph-level latent representations (graph level, not node level)
         self._print("Extracting graph-level latent representations...")
         
-
+        # progress bar over the control samples
         ctrl_graph_z_list = []
         ctrl_progress = tqdm(enumerate(ctrl_samples), 
                            total=len(ctrl_samples),
@@ -741,6 +748,7 @@ class GINVAE(nn.Module):
             # Each sample's graph_z is [1, latent_dim], we squeeze to [latent_dim]
             ctrl_graph_z_list.append(torch.tensor(sample['graph_z'], dtype=torch.float32).squeeze(0).to(device))
         
+        # progress bar over the perturbed samples
         ptrb_graph_z_list = []
         ptrb_progress = tqdm(enumerate(ptrb_samples), 
                            total=len(ptrb_samples),
@@ -806,10 +814,13 @@ class GINVAE(nn.Module):
         
         return latent_ctrl_ref, latent_ptrb_ref, computation_info
 
+    # convenience wrapper for the whole reference-dataset pipeline
     def process_reference_dataset(self, x_ref_dataset, save_path=None, group_type=None, group_name=None, 
                                 max_ptrb_samples=None, max_samples_per_batch=100, force_reprocess=False):
-        """
-        
+        """Process the reference dataset and compute the biological context.
+
+        If save_path does not exist the reference is processed and written there first.
+
         Args:
             x_ref_dataset: Reference dataset
             save_path: Path to save/load processed data (if None, will use temporary processing)
@@ -936,6 +947,7 @@ class GINVAE(nn.Module):
         return self.predict(data, self._ctrl_ref_cache, self._ptrb_ref_cache)
 
     def set_verbose(self, verbose):
+        """Turn verbose output on or off."""
         self.verbose = verbose
 
 

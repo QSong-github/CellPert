@@ -272,13 +272,15 @@ def evaluate_perturbation_prediction(model, test_dataset, latent_ctrl_ref, laten
         results["deg_metrics"] = metrics_deg
         results["pred_delta"] = pred_delta_samples
         results["gt_delta"] = gt_delta_samples
-
+    
+    # ==================== writing the results ====================
+    # take the plate id
     plate_id = args.test_dataset_id if hasattr(args, 'test_dataset_id') else 'unknown'
     
-
+    # 1. append the metrics to the CSV
     csv_file = os.path.join(args.output_dir, "all_plates_results.csv")
     
-
+    # assemble the row
     if compute_deg:
         csv_data = {
             'plate_id': [plate_id],
@@ -288,7 +290,7 @@ def evaluate_perturbation_prediction(model, test_dataset, latent_ctrl_ref, laten
         # absolute metrics
         for key, value in metrics_perturbation.items():
             csv_data[f'absolute_{key}'] = [value]
-        # deg metrics
+        # delta metrics
         for key, value in metrics_deg.items():
             csv_data[f'deg_{key}'] = [value]
     else:
@@ -301,19 +303,21 @@ def evaluate_perturbation_prediction(model, test_dataset, latent_ctrl_ref, laten
             csv_data[key] = [value]
     
     df = pd.DataFrame(csv_data)
-
+    
+    # write the header only if the file is new
     file_exists = os.path.isfile(csv_file)
     
-
+    # append
     df.to_csv(csv_file, mode='a', header=not file_exists, index=False)
     print(f"\n✓ Results appended to: {csv_file}")
     
-
+    # 2. write predictions and ground truth to a pkl
     pkl_dir = os.path.join(args.output_dir, 'predictions')
     os.makedirs(pkl_dir, exist_ok=True)
     
     pkl_file = os.path.join(pkl_dir, f'plate_{plate_id}_predictions.pkl')
-
+    
+    # assemble what is written
     pkl_data = {
         'plate_id': plate_id,
         'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -331,13 +335,13 @@ def evaluate_perturbation_prediction(model, test_dataset, latent_ctrl_ref, laten
         pkl_data['gt_delta'] = gt_delta_samples
         pkl_data['metrics']['deg'] = metrics_deg
     
-
+    # write the pkl
     with open(pkl_file, 'wb') as f:
         pickle.dump(pkl_data, f, protocol=pickle.HIGHEST_PROTOCOL)
     
     print(f"✓ Predictions saved to: {pkl_file}")
     
-
+    # 3. also write a per-plate CSV, kept for compatibility
     single_plate_csv = os.path.join(args.output_dir, f'plate_{plate_id}_results.csv')
     df.to_csv(single_plate_csv, index=False)
     print(f"✓ Single plate results saved to: {single_plate_csv}")
@@ -345,27 +349,29 @@ def evaluate_perturbation_prediction(model, test_dataset, latent_ctrl_ref, laten
     return results
 
 
-
+# training
 def train_gin_vae(args):
+    # the training set is loaded only when training or testing
     train_dataset = None
     
     if args.train_flag:
+        # Build gene graph from training data
         print("Loading training(ref) data...")
         
         train_dataset = ChunkedGeneGraphDataset(
             h5ad_paths=args.train_data_path,
             split='train',
-            chunk_size=10000,  
+            chunk_size=10000,  # tune to the available memory
             auto_build_graph=True,
             species=9606,
             required_score=700
         )
-
+        # usage
         sampler = ChunkAwareRandomSampler(
             train_dataset, 
             chunk_size=5000, 
-            shuffle_chunks=True,      
-            shuffle_within_chunk=False 
+            shuffle_chunks=True,      # shuffle across chunks
+            shuffle_within_chunk=False # keep the order inside a chunk, which reduces IO
         )
         train_loader = DataLoader(train_dataset, batch_size=args.batch_size, sampler=sampler, num_workers=4)
         
@@ -382,82 +388,87 @@ def train_gin_vae(args):
         
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
         best_loss = float('inf')
-        best_step = 0
+        best_epoch = 0
         
-        total_steps = args.steps
-        
-        # Training loop 
-        model.train()
-        train_loss = 0
-        mse_loss = 0
-        graph_kl_loss = 0
-        total_samples = 0
-        
-        train_iter = iter(train_loader)
-        
-        with tqdm(total=total_steps, desc="Training") as pbar:
-            for step in range(total_steps):
-                try:
-                    batch = next(train_iter)
-                except StopIteration:
-                    train_iter = iter(train_loader)
-                    batch = next(train_iter)
-                
-                batch = batch.to(args.device)
-                optimizer.zero_grad()
-                
-                # Forward pass
-                recon_batch, mask, node_mu, node_logvar, graph_mu, graph_logvar = model(batch)
-                
-                # Original data
-                original_x = batch.x
-                b_original_x, node_mask = to_dense_batch(original_x, batch.batch)
-                
-                # Dimension handling
-                if recon_batch.dim() == 3 and recon_batch.size(-1) == 1:
-                    recon_batch = recon_batch.squeeze(-1)
-                if b_original_x.dim() == 3 and b_original_x.size(-1) == 1:
-                    b_original_x = b_original_x.squeeze(-1)
-                
-                # Loss calculation
-                loss, mse, graph_kld = loss_function(
-                    recon_batch, b_original_x, node_mu, node_logvar, graph_mu, graph_logvar, args
-                )
-                
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-                optimizer.step()
-                
-                batch_size = batch.batch.max().item() + 1
-                total_samples += batch_size
-                
-                train_loss += loss.item()
-                mse_loss += mse.item()
-                graph_kl_loss += graph_kld.item()
-                
-                pbar.update(1)
-                pbar.set_postfix({
-                    "Loss": f"{train_loss / total_samples:.8f}",
-                    "MSE": f"{mse_loss / total_samples:.8f}",
-                    "GraphKL": f"{graph_kl_loss / total_samples:.8f}"
-                })
-                
-                # 1000 steps / one checkpoint
-                if (step + 1) % 1000 == 0:
-                    current_loss = train_loss / total_samples
-                    if current_loss < best_loss:
-                        best_loss = current_loss
-                        best_step = step + 1
-                        torch.save(model.state_dict(), args.ckpt_path)
-                        print(f"\nStep {step+1}: Saved checkpoint with loss {best_loss:.8f}")
+        for epoch in range(args.epochs):
+            model.train()
+            train_loss = 0
+            mse_loss = 0
+            graph_kl_loss = 0
+            total_samples = 0
+            
+            # keep each batch and its mask
+            all_recon_batches = []
+            all_x_batches = []
+            all_mask_batches = []
+            
+            with tqdm(train_loader, desc=f"Epoch {epoch+1}", unit="batch") as pbar:
+                for batch in pbar:
+                    batch = batch.to(args.device)
+                    optimizer.zero_grad()
+                    
+                    # Forward pass
+                    recon_batch, mask, node_mu, node_logvar, graph_mu, graph_logvar = model(batch)
+                    bid = batch.batch
+                    original_x = batch.x
+                    
+                    # dense batch and its mask
+                    b_original_x, node_mask = to_dense_batch(original_x, bid)
+                    
+                    # make the dimensions agree
+                    if recon_batch.dim() == 3 and recon_batch.size(-1) == 1:
+                        recon_batch = recon_batch.squeeze(-1)
+                    if b_original_x.dim() == 3 and b_original_x.size(-1) == 1:
+                        b_original_x = b_original_x.squeeze(-1)
+                    
+                    # Loss calculation
+                    loss, mse, graph_kld = loss_function(
+                        recon_batch, b_original_x, node_mu, node_logvar, graph_mu, graph_logvar, args
+                    )
+                    
+                    # keep this batch for the evaluation at the end
+                    all_recon_batches.append(recon_batch.cpu().detach())
+                    all_x_batches.append(b_original_x.cpu().detach())
+                    all_mask_batches.append(node_mask.cpu().detach())
+                    
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                    optimizer.step()
+                    
+                    batch_size = batch.batch.max().item() + 1
+                    total_samples += batch_size
+                    
+                    train_loss += loss.item()
+                    mse_loss += mse.item()
+                    graph_kl_loss += graph_kld.item()
+                    
+                    pbar.set_postfix({
+                        "Loss": f"{train_loss / total_samples:.8f}",
+                        "MSE": f"{mse_loss / total_samples:.8f}",
+                        "GraphKL": f"{graph_kl_loss / total_samples:.8f}"
+                    })
+            
+            # evaluation at the end of the epoch
+            train_loss_ep = train_loss / total_samples
+            if train_loss_ep < best_loss:
+                best_loss = train_loss_ep
+                best_epoch = epoch
+                torch.save(model.state_dict(), args.ckpt_path)
 
-        final_loss = train_loss / total_samples
-        if final_loss < best_loss:
-            best_loss = final_loss
-            best_step = total_steps
-            torch.save(model.state_dict(), args.ckpt_path)
-        
-        print(f"\nTraining completed: best loss: {best_loss:.4f}, best_step: {best_step}")
+            print(f"best loss: {best_loss:.4f}, best_epoch: {best_epoch}")
+
+            # take long time！
+            # if epoch==args.epochs-1:
+            # recon_samples, x_samples = process_variable_size_batches_with_mask(
+            #     all_recon_batches, all_x_batches, all_mask_batches
+            # )
+            
+            # print(f"Processed {len(recon_samples)} samples for evaluation")
+            
+            # # Reconstruction metrics
+            # metrics = evaluate_prediction_samplewise_variable_length(recon_samples, x_samples)
+            # print("Training Reconstruction Metrics:")
+            # print(pd.Series(metrics))
     
     # Testing
     if args.test_flag:
@@ -465,7 +476,7 @@ def train_gin_vae(args):
         test_dataset = ChunkedGeneGraphDataset(
             h5ad_paths=args.test_data_path,
             split='test',
-            chunk_size=10000,  
+            chunk_size=10000,  # tune to the available memory
             auto_build_graph=True,
             species=9606,
             required_score=700
@@ -482,6 +493,7 @@ def train_gin_vae(args):
         # Step 1: Process reference dataset (from training data) to get biological context
         print("\nProcessing reference dataset for biological context...")
         
+        # load the training set only when it is needed
         if train_dataset is None:
             print("Loading training(ref) data for reference...")
             train_dataset = ChunkedGeneGraphDataset(
@@ -500,7 +512,7 @@ def train_gin_vae(args):
             save_path=args.ref_save_path,
             group_type=None,
             group_name=None,
-            force_reprocess=False  
+            force_reprocess=False  # skip the work if the file already exists
         )
         
         if latent_ctrl_ref is None or latent_ptrb_ref is None:
@@ -512,7 +524,7 @@ def train_gin_vae(args):
         sampler = ChunkAwareRandomSampler(
             test_dataset, 
             chunk_size=5000, 
-            shuffle_chunks=False,  
+            shuffle_chunks=False,  # keep the order, which makes the output easier to analyse
             shuffle_within_chunk=False
         )
         test_loader = DataLoader(test_dataset, batch_size=args.batch_size, sampler=sampler, num_workers=4)
@@ -540,14 +552,14 @@ def train_gin_vae(args):
                 all_x_test_batches.append(b_original_x.cpu().detach())
                 all_mask_test_batches.append(node_mask.cpu().detach())
             
-         
+            # process the test data, keeping each sample intact
             recon_test_samples, x_test_samples = process_variable_size_batches_with_mask(
                 all_recon_test_batches, all_x_test_batches, all_mask_test_batches
             )
             
             print(f"Test: Processed {len(recon_test_samples)} samples")
             
-       
+            # reconstruction metrics on the test set
             metrics_test = evaluate_prediction_samplewise_variable_length(recon_test_samples, x_test_samples)
             print("Test Reconstruction Metrics:")
             print(pd.Series(metrics_test))
@@ -566,14 +578,14 @@ def train_gin_vae(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Arguments for training GIN-VAE")
-    parser.add_argument("--train_data_path", type=str, default=['/blue/qsong1/wang.qing/scPerturb/scUP/scGP/lincs/merged_all_965_with_morgan.h5ad'])
-    parser.add_argument("--test_data_path", type=str, default='/blue/qsong1/wang.qing/scPerturb/scUP/scGP/minitahoe/p1_with_morgan.h5ad')
+    parser.add_argument("--train_data_path", type=str, default=['./data/merged_all_965_with_morgan.h5ad'])
+    parser.add_argument("--test_data_path", type=str, default='./data/minitahoe/p1_with_morgan.h5ad')
     parser.add_argument("--ref_save_path", type=str, default='./output/reference_latents.pkl')
     parser.add_argument("--output_dir", type=str, default='./output')
 
     parser.add_argument("--device", type=str, default=torch.device("cuda" if torch.cuda.is_available() else "cpu"))
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--steps", type=int, default=10000, help="Total training steps")
+    parser.add_argument("--epochs", type=int, default=5)
     parser.add_argument("--hidden_dim", type=int, default=300)
     parser.add_argument("--latent_dim", type=int, default=100)
     parser.add_argument("--num_layers", type=int, default=2, help="Number of GIN layers in encoder and decoder")
@@ -591,7 +603,7 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-
+    # create the output directory
     os.makedirs(args.output_dir, exist_ok=True)
     
     print("*"*50)

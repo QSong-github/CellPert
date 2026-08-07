@@ -27,14 +27,15 @@ def _batch_list(lst, batch_size):
 # Docs: https://string-db.org/help/api/
 # ---------------------------
 STRING_BASE = "https://string-db.org/api"
-#  IDs: human=9606, rat=10090, mouse=10116
+# common taxonomy ids: human 9606, mouse 10090, rat 10116
 def string_map_ids(genes: List[str], species: int = 9606, sleep=0.34) -> Dict[str, str]:
-    """
-    Map gene symbols to STRING protein IDs.
-    return: dict[user_gene] -> string_id
+    """Map user gene symbols onto STRING protein identifiers.
+
+    Returns dict[user_gene] -> string_id.
     """
     endpoint = f"{STRING_BASE}/json/get_string_ids"
     mapping = {}
+    # STRING asks callers to rate-limit, to avoid 429
     for chunk in _batch_list(genes, 1000):
         params = {
             "identifiers": "\r".join(chunk),
@@ -46,7 +47,7 @@ def string_map_ids(genes: List[str], species: int = 9606, sleep=0.34) -> Dict[st
             r.raise_for_status()
             js = r.json()
             for item in js:
-                # preferredName: stringId:  9606.ENSP000003... or 9606.ENSG...
+                # preferredName is the canonical name; stringId looks like 9606.ENSP000003... or 9606.ENSG...
                 user = item.get("queryItem")
                 sid  = item.get("stringId")
                 if user and sid and user not in mapping:
@@ -63,9 +64,9 @@ def string_get_network(
     required_score: int = 700,
     sleep=0.34
 ) -> pd.DataFrame:
-    """
-    Fetch pairwise edges and combined_score from STRING.
-    return DataFrame: [stringId_A, stringId_B, combined_score]
+    """Fetch the interaction network from STRING as pairwise edges with a combined score.
+
+    Returns a DataFrame with columns [stringId_A, stringId_B, combined_score].
     """
     endpoint = f"{STRING_BASE}/tsv/network"
     rows = []
@@ -78,7 +79,7 @@ def string_get_network(
         try:
             r = requests.post(endpoint, data=params, timeout=120)
             r.raise_for_status()
-            # TSV: preferredName_A preferredName_B score ... stringId_A stringId_B ...
+            # returns TSV: preferredName_A preferredName_B score ... stringId_A stringId_B ...
             lines = r.text.strip().splitlines()
             header = lines[0].split("\t")
             col2idx = {c: i for i, c in enumerate(header)}
@@ -111,16 +112,18 @@ def build_corr_edges(
     abs_corr: bool = True,
     min_corr: Optional[float] = None,
 ) -> pd.DataFrame:
-    """
-    Build gene-gene correlation edges from expression matrix (cells x genes), using kNN -> [gene_i, gene_j, weight].
-    - topk: number of top neighbors per gene
-    - corr_metric: 'pearson' or 'spearman'
-    - abs_corr: whether to use absolute correlation values
-    - min_corr: minimum correlation threshold
+    """Build correlation kNN edges between genes from a cells-by-genes matrix.
+
+    Returns an edge table [gene_i, gene_j, weight].
+      topk: each gene is joined to its topk most correlated genes
+      corr_metric: 'pearson' or 'spearman'
+      abs_corr: rank by the absolute correlation
+      min_corr: optional threshold; if set, edges below it are dropped
     """
     _log(f"Compute gene-gene correlation ({corr_metric}) ...")
     # X: cells x genes  -> corr on gene axis
     if corr_metric == "spearman":
+        # Pearson on ranks, which approximates Spearman
         ranks = np.apply_along_axis(lambda v: pd.Series(v).rank().values, 0, X)
         C = np.corrcoef(ranks, rowvar=False)
     else:
@@ -131,8 +134,8 @@ def build_corr_edges(
     edges = []
     for i in range(G):
         corr_i = C[i].copy()
-        corr_i[i] = -np.inf  # exclude self-correlation
-
+        corr_i[i] = -np.inf  # drop self-edges
+        # take the ranking
         if abs_corr:
             order = np.argsort(-np.abs(corr_i))
         else:
@@ -151,7 +154,7 @@ def build_corr_edges(
             w = abs(corr_i[j]) if abs_corr else corr_i[j]
             edges.append((genes[i], genes[j], float(w)))
     df = pd.DataFrame(edges, columns=["gene_i", "gene_j", "weight"])
-  
+    # make undirected: deduplicate and keep the larger weight
     df2 = df.copy()
     df2[["a", "b"]] = np.sort(df2[["gene_i", "gene_j"]].values, axis=1)
     df2 = df2.groupby(["a", "b"], as_index=False)["weight"].max()
@@ -172,12 +175,15 @@ def build_gene_graph_from_h5ad(
     corr_metric: str = "pearson",
     corr_min: Optional[float] = None,
 ) -> Tuple[Data, List[str], pd.DataFrame]:
-    """
-    Build a gene graph from an h5ad file using STRING PPI and/or correlation edges.
-    return:
-      - PyG Data(x, edge_index, edge_attr)
-      - gene_order (list[str]) in the order of adata.var_names
-      - edges_df (DataFrame) with columns (gene_i, gene_j, weight, source)
+    """Build the gene graph from an h5ad file, with genes as nodes.
+
+    1) prior edges from STRING, filtered by the confidence threshold
+    2) for genes STRING does not cover, correlation kNN edges from expression
+
+    Returns:
+      PyG Data(x, edge_index, edge_attr)
+      gene_order (list[str]), the node order
+      edges_df (DataFrame), the final edge table (gene_i, gene_j, weight, source)
     """
     _log(f"Reading h5ad: {h5ad_path}")
     adata = sc.read_h5ad(h5ad_path)
@@ -188,7 +194,8 @@ def build_gene_graph_from_h5ad(
 
     if normalize_log1p:
         _log("Normalizing: per-cell libsize -> 1e4, then log1p")
-  
+        
+        # require non-negative values
         if hasattr(adata.X, "A"):
             X_check = adata.X.A
         else:
@@ -196,6 +203,7 @@ def build_gene_graph_from_h5ad(
         
         if np.any(X_check < 0):
             print("Warning: Found negative values in data before normalization")
+            # either clip to zero or raise
             # adata.X = np.maximum(adata.X, 0)
         
         sc.pp.normalize_total(adata, target_sum=1e4, inplace=True)
@@ -203,7 +211,7 @@ def build_gene_graph_from_h5ad(
         X = adata.X.A if hasattr(adata.X, "A") else adata.X
         X = np.asarray(X, dtype=float)
 
-
+    # ========== 1) STRING prior network ==========
     _log("Mapping genes to STRING IDs ...")
     gene2sid = string_map_ids(genes, species=species)
     covered_genes = [g for g in genes if g in gene2sid]
@@ -216,27 +224,27 @@ def build_gene_graph_from_h5ad(
         _log("Fetching STRING network edges ...")
         net_df = string_get_network(sids, species=species, required_score=required_score)
         if not net_df.empty:
-          
+            # map stringId back to gene symbol, using only the covered genes
             sid2gene = {gene2sid[g]: g for g in covered_genes}
-       
+            # keep only edges within our gene set
             net_df = net_df[
                 net_df["stringId_A"].isin(sid2gene) & net_df["stringId_B"].isin(sid2gene)
             ].copy()
             if not net_df.empty:
                 net_df["gene_i"] = net_df["stringId_A"].map(sid2gene)
                 net_df["gene_j"] = net_df["stringId_B"].map(sid2gene)
-             
+                # rescale to 0-1
                 net_df["weight"] = net_df["combined_score"].astype(float) / string_weight_scale
                 net_df = net_df[["gene_i", "gene_j", "weight"]]
                 net_df["source"] = "STRING"
                 edges_list.append(net_df)
                 source_list.append("STRING")
 
-
+    # ========== 2) fill the gaps with correlation edges ==========
     missing_genes = [g for g in genes if g not in covered_genes]
     if len(missing_genes) > 0 and corr_topk_missing > 0:
-        _log(f"Building correlation edges for {len(missing_genes)} missing genes ")
-       
+        _log(f"Building correlation edges for {len(missing_genes)} missing genes (kNN over all genes, deduplicated, largest weight kept)")
+        # run kNN over all genes first, which is more stable, then keep the edges that touch a missing gene
         corr_df_all = build_corr_edges(
             X=X,
             genes=genes,
@@ -245,7 +253,7 @@ def build_gene_graph_from_h5ad(
             abs_corr=True,
             min_corr=corr_min,
         )
-      
+        # record the source
         corr_df_all["source"] = np.where(
             corr_df_all["gene_i"].isin(missing_genes) | corr_df_all["gene_j"].isin(missing_genes),
             "CORR_MISSING",
@@ -254,10 +262,10 @@ def build_gene_graph_from_h5ad(
         edges_list.append(corr_df_all)
         source_list.append("CORR")
 
-
+    # merge the edges and deduplicate as undirected
     if edges_list:
         edges_df = pd.concat(edges_list, ignore_index=True)
-      
+        # make undirected: sort the endpoints and keep the largest weight
         pair = np.sort(edges_df[["gene_i", "gene_j"]].values, axis=1)
         edges_df["a"] = pair[:, 0]
         edges_df["b"] = pair[:, 1]
@@ -268,9 +276,9 @@ def build_gene_graph_from_h5ad(
     else:
         edges_df = pd.DataFrame(columns=["gene_i", "gene_j", "weight", "source"])
 
-  
+    # build the graph; node order follows genes, matching adata.var_names
     gene2idx = {g: i for i, g in enumerate(genes)}
- 
+    # keep the edges whose endpoints are in the node set
     edges_df = edges_df[
         edges_df["gene_i"].isin(gene2idx) & edges_df["gene_j"].isin(gene2idx)
     ].copy()
@@ -280,15 +288,16 @@ def build_gene_graph_from_h5ad(
         edge_index = torch.empty((2, 0), dtype=torch.long)
         edge_attr = torch.empty((0,), dtype=torch.float32)
     else:
-     
+        # to indices
         u = edges_df["gene_i"].map(gene2idx).values
         v = edges_df["gene_j"].map(gene2idx).values
-  
+        # undirected graph: add both directions
         edge_index = torch.tensor(np.vstack([np.r_[u, v], np.r_[v, u]]), dtype=torch.long)
         w = edges_df["weight"].astype(float).values
         edge_attr = torch.tensor(np.r_[w, w], dtype=torch.float32)
 
-
+    # node features: one expression value per sample, or a per-sample summary such as mean and variance
+    # the general choice used here is the per-gene mean and variance over all cells, a 2-dimensional feature that does not grow with the sample count
     g_mean = np.asarray(X.mean(axis=0)).reshape(-1, 1)
     g_var  = np.asarray(X.var(axis=0)).reshape(-1, 1)
     node_feat = np.concatenate([g_mean, g_var], axis=1)  # [G, 2]
@@ -296,6 +305,7 @@ def build_gene_graph_from_h5ad(
 
     data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr)
 
+    # return the gene order and the edge table, for reuse and for auditing
     edges_df = edges_df[["gene_i", "gene_j", "weight", "source"]].reset_index(drop=True)
     return data, genes, edges_df
 

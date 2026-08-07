@@ -4,18 +4,19 @@ import torch.nn.functional as F
 
 
 def evaluate_prediction_samplewise_variable_length(recon_samples, x_samples, topk=100, device='cuda'):
-    """
-    
+    """Metrics for samples that may differ in length.
+
     Args:
-        recon_samples: list of numpy arrays, 
-        x_samples: list of numpy arrays, 
-        topk: top-k
-        device: 
+        recon_samples: list of numpy arrays, one reconstruction per sample
+        x_samples: list of numpy arrays, one observed profile per sample
+        topk: k for the top-k gene overlap, computed within each sample
+        device: device on which to compute
     """
     
     if len(recon_samples) != len(x_samples):
         raise ValueError("Number of reconstructed and original samples must match")
-
+    
+    # per-sample metrics
     sample_metrics = {
         'MSE': [],
         'MAE': [],
@@ -25,29 +26,34 @@ def evaluate_prediction_samplewise_variable_length(recon_samples, x_samples, top
         'CosineSimilarity': [],
         'JS_Divergence': [],
         'SSIM': [],
-        'TopK_Overlap': [] 
+        'TopK_Overlap': []  # top-k overlap computed within a sample
     }
     
     with torch.no_grad():
         for pred_sample, true_sample in zip(recon_samples, x_samples):
+            # skip empty samples
             if len(pred_sample) == 0 or len(true_sample) == 0:
                 continue
             
+            # make the lengths agree
             if len(pred_sample) != len(true_sample):
                 min_len = min(len(pred_sample), len(true_sample))
                 pred_sample = pred_sample[:min_len]
                 true_sample = true_sample[:min_len]
             
-     
+            # to torch tensors
             pred_tensor = torch.from_numpy(pred_sample).float().to(device)
             true_tensor = torch.from_numpy(true_sample).float().to(device)
-       
+            # clip negative predictions to zero
             pred_tensor[pred_tensor < 0] = 0
 
+            # sanity check
+            # assert torch.all(true_tensor >= 0), f"true_tensor has {torch.sum(true_tensor < 0).item()} negative values"
+            # skip samples shorter than 2, where a correlation is undefined
             if len(pred_tensor) < 2:
                 continue
             
-      
+            # basic metrics
             diff = pred_tensor - true_tensor
             mse = torch.mean(diff ** 2).item()
             mae = torch.mean(torch.abs(diff)).item()
@@ -58,7 +64,7 @@ def evaluate_prediction_samplewise_variable_length(recon_samples, x_samples, top
             ss_tot = torch.sum((true_tensor - true_mean) ** 2)
             r2 = (1 - ss_res / torch.clamp(ss_tot, min=1e-8)).item()
             
-            # Pearson
+            # Pearson correlation
             pred_std = torch.std(pred_tensor, unbiased=False)
             true_std = torch.std(true_tensor, unbiased=False)
             
@@ -71,7 +77,7 @@ def evaluate_prediction_samplewise_variable_length(recon_samples, x_samples, top
             else:
                 pearson = float('nan')
             
-            # csosine similarity
+            # cosine similarity
             pred_norm = torch.norm(pred_tensor)
             true_norm = torch.norm(true_tensor)
             if pred_norm > 1e-8 and true_norm > 1e-8:
@@ -79,7 +85,7 @@ def evaluate_prediction_samplewise_variable_length(recon_samples, x_samples, top
             else:
                 cosine_sim = float('nan')
             
-            # Spearman
+            # Spearman correlation
             if len(pred_tensor) >= 3:
                 try:
                     pred_ranks = torch.argsort(torch.argsort(pred_tensor)).float()
@@ -101,7 +107,7 @@ def evaluate_prediction_samplewise_variable_length(recon_samples, x_samples, top
             else:
                 spearman = float('nan')
             
-            # JS
+            # Jensen-Shannon divergence
             try:
                 pred_shifted = pred_tensor - torch.min(pred_tensor)
                 true_shifted = true_tensor - torch.min(true_tensor)
@@ -152,18 +158,19 @@ def evaluate_prediction_samplewise_variable_length(recon_samples, x_samples, top
             except:
                 ssim = float('nan')
             
-            # Top-k overlap
+            # top-k overlap within the sample
             try:
                 sample_topk = min(topk, len(pred_tensor))
                 if sample_topk > 0:
-           
+                    # the top-k genes by absolute value in the ground truth
                     true_abs = torch.abs(true_tensor)
                     top_true_idx = torch.topk(true_abs, sample_topk)[1]
                     
+                    # the top-k genes by prediction error
                     pred_error = torch.abs(pred_tensor - true_tensor)
                     top_pred_idx = torch.topk(pred_error, sample_topk)[1]
                     
-        
+                    # intersect
                     top_true_set = set(top_true_idx.cpu().numpy())
                     top_pred_set = set(top_pred_idx.cpu().numpy())
                     
@@ -173,7 +180,7 @@ def evaluate_prediction_samplewise_variable_length(recon_samples, x_samples, top
             except:
                 overlap = float('nan')
             
-      
+            # store the metrics
             sample_metrics['MSE'].append(mse)
             sample_metrics['MAE'].append(mae)
             sample_metrics['R2'].append(r2)
@@ -184,7 +191,7 @@ def evaluate_prediction_samplewise_variable_length(recon_samples, x_samples, top
             sample_metrics['SSIM'].append(ssim)
             sample_metrics['TopK_Overlap'].append(overlap)
     
-
+    # summary statistics
     def safe_mean_std(values):
         valid_values = [v for v in values if not (np.isnan(v) or np.isinf(v))]
         if len(valid_values) > 0:
@@ -192,7 +199,7 @@ def evaluate_prediction_samplewise_variable_length(recon_samples, x_samples, top
         else:
             return float('nan'), float('nan'), 0
     
-  
+    # assemble the result
     results = {}
     for metric, values in sample_metrics.items():
         mean_val, std_val, count = safe_mean_std(values)
@@ -206,7 +213,8 @@ def evaluate_prediction_samplewise_variable_length(recon_samples, x_samples, top
 
 
 def evaluate_prediction_samplewise_gpu_fast(pred_exp, true_exp, topk=100, device='cuda'):
-    # to torch tensor
+    """Faster GPU implementation, including Jensen-Shannon divergence and SSIM."""
+    # to torch tensors
     if isinstance(pred_exp, np.ndarray):
         pred_exp = torch.from_numpy(pred_exp).float()
     if isinstance(true_exp, np.ndarray):
@@ -215,9 +223,9 @@ def evaluate_prediction_samplewise_gpu_fast(pred_exp, true_exp, topk=100, device
     pred_exp = pred_exp.to(device)
     true_exp = true_exp.to(device)
     
-
-    with torch.no_grad():  
-        # MSE/MAE
+    # use torch built-ins for speed
+    with torch.no_grad():  # no gradients needed
+        # MSE and MAE
         diff = pred_exp - true_exp
         mse = torch.mean(diff ** 2, dim=1)
         mae = torch.mean(torch.abs(diff), dim=1)
@@ -228,6 +236,7 @@ def evaluate_prediction_samplewise_gpu_fast(pred_exp, true_exp, topk=100, device
         ss_tot = torch.sum((true_exp - true_mean_sample) ** 2, dim=1)
         r2 = 1 - ss_res / torch.clamp(ss_tot, min=1e-8)
         
+        # centre and scale for the correlation
         pred_std = torch.std(pred_exp, dim=1, keepdim=True, unbiased=False)
         true_std = torch.std(true_exp, dim=1, keepdim=True, unbiased=False)
         pred_mean = torch.mean(pred_exp, dim=1, keepdim=True)
@@ -236,7 +245,7 @@ def evaluate_prediction_samplewise_gpu_fast(pred_exp, true_exp, topk=100, device
         pred_normalized = (pred_exp - pred_mean) / torch.clamp(pred_std, min=1e-8)
         true_normalized = (true_exp - true_mean) / torch.clamp(true_std, min=1e-8)
         
-        # Pearson
+        # Pearson correlation
         pearson = torch.mean(pred_normalized * true_normalized, dim=1)
         
         # cosine similarity
@@ -244,7 +253,7 @@ def evaluate_prediction_samplewise_gpu_fast(pred_exp, true_exp, topk=100, device
         true_norm = torch.norm(true_exp, dim=1)
         cosine_sim = torch.sum(pred_exp * true_exp, dim=1) / torch.clamp(pred_norm * true_norm, min=1e-8)
         
-        # Spearman
+        # Spearman correlation, computed from ranks
         pred_ranks = torch.argsort(torch.argsort(pred_exp, dim=1), dim=1).float()
         true_ranks = torch.argsort(torch.argsort(true_exp, dim=1), dim=1).float()
         
@@ -258,36 +267,41 @@ def evaluate_prediction_samplewise_gpu_fast(pred_exp, true_exp, topk=100, device
         
         spearman = torch.mean(pred_ranks_norm * true_ranks_norm, dim=1)
         
-        # JS
+        # Jensen-Shannon divergence
+        # turn the values into distributions
         pred_shifted = pred_exp - torch.min(pred_exp, dim=1, keepdim=True)[0]
         true_shifted = true_exp - torch.min(true_exp, dim=1, keepdim=True)[0]
         
+        # normalise to a distribution
         pred_prob = pred_shifted / torch.clamp(torch.sum(pred_shifted, dim=1, keepdim=True), min=1e-8)
         true_prob = true_shifted / torch.clamp(torch.sum(true_shifted, dim=1, keepdim=True), min=1e-8)
         
+        # midpoint distribution
         m = (pred_prob + true_prob) / 2
         
-        # log(0)
+        # small epsilon so that log(0) is never taken
         eps = 1e-8
         pred_prob = torch.clamp(pred_prob, min=eps)
         true_prob = torch.clamp(true_prob, min=eps)
         m = torch.clamp(m, min=eps)
         
-        # KL
+        # KL divergence
         kl_pm = torch.sum(pred_prob * torch.log(pred_prob / m), dim=1)
         kl_tm = torch.sum(true_prob * torch.log(true_prob / m), dim=1)
-
+        
+        # Jensen-Shannon divergence
         js_divergence = 0.5 * (kl_pm + kl_tm)
         
         # SSIM
         C1 = 0.01 ** 2
         C2 = 0.03 ** 2
         
-
+        # variance and covariance
         pred_var = torch.var(pred_exp, dim=1, keepdim=True, unbiased=False)
         true_var = torch.var(true_exp, dim=1, keepdim=True, unbiased=False)
         covar = torch.mean((pred_exp - pred_mean) * (true_exp - true_mean), dim=1, keepdim=True)
         
+        # SSIM
         numerator1 = 2 * pred_mean * true_mean + C1
         numerator2 = 2 * covar + C2
         denominator1 = pred_mean ** 2 + true_mean ** 2 + C1
@@ -305,7 +319,8 @@ def evaluate_prediction_samplewise_gpu_fast(pred_exp, true_exp, topk=100, device
         diff_global = torch.abs(true_global_mean - pred_global_mean)
         top_pred_idx = torch.topk(diff_global, topk)[1]
         
-
+        # intersect, entirely on the GPU
+        # boolean masks for the intersection
         mask_true = torch.zeros(pred_exp.shape[1], dtype=torch.bool, device=device)
         mask_pred = torch.zeros(pred_exp.shape[1], dtype=torch.bool, device=device)
         
@@ -314,7 +329,7 @@ def evaluate_prediction_samplewise_gpu_fast(pred_exp, true_exp, topk=100, device
         
         overlap = (mask_true & mask_pred).sum().float().item() / topk
     
-
+    # handle NaN and return
     def safe_mean(tensor):
         valid_mask = ~torch.isnan(tensor)
         if valid_mask.sum() > 0:

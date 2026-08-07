@@ -92,9 +92,18 @@ and `triton`, which conflict with one another when both are pinned, the twenty-s
 other than the nightly one and cause `libtorch_cuda.so: undefined symbol` at import, and
 `torch-cluster`, which the code does not import.
 
-The environment file was built from scratch on a clean prefix to check that it resolves:
-`conda env create` completed, `torch` 2.9.1 and `torch_geometric` 2.6.1 imported, and the
-modules under `src/` imported without error.
+The environment file was built from scratch on a clean prefix and then used to run the
+model end to end. `conda env create` completed and resolved `torch` 2.9.1+cu128;
+inference on Mini Tahoe plate 1 with the released weights, starting from an empty output
+directory so that the reference latents were recomputed, reproduced the published values
+for that plate to within 1e-4: mean squared error 39.887294 against 39.887208, Pearson
+0.350311 against 0.350321, cosine similarity 0.411403 against 0.411403 and Spearman
+0.156228 against 0.156204.
+
+### Training
+
+`run_all.sh` trains for five epochs, which is the setting the released weights were
+produced with, and then predicts on all fourteen plates.
 
 
 ---
