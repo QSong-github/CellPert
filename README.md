@@ -65,7 +65,7 @@ Output: Predicted perturbed gene expression
 
 ```bash
 # Clone the repository
-https://github.com/QSong-github/CellPert.git
+git clone https://github.com/QSong-github/CellPert.git
 cd CellPert
 
 # Create the conda environment from the provided file
@@ -74,6 +74,21 @@ conda env create -f environment.yml
 # Activate the environment
 conda activate info
 ```
+
+`environment.yml` is the file to install from. It requires PyTorch 2.4 or later and
+resolves on any machine with a matching CUDA or CPU build; the PyTorch build itself is
+left to pip so that the right wheel is chosen for the host.
+
+`environment.exact.yml` records the exact versions the reported results were produced
+with, including a PyTorch nightly build. It is kept for provenance and is not intended
+for installation: the nightly wheels it pins are published on the PyTorch nightly index
+rather than on PyPI, so installing from it requires that index and will not resolve on
+a system where those builds are unavailable.
+
+Three entries present in the exact record are absent from `environment.yml`:
+`pytorch-triton` and `triton`, which pip installs automatically as dependencies of the
+selected PyTorch build and which conflict with one another when pinned, and
+`torch-cluster`, which the code does not import.
 
 
 ---

@@ -157,6 +157,7 @@ dependencies:
       - pynndescent==0.5.13
       - pyparsing==3.2.3
       - pytorch-lightning==2.6.0
+      - pytorch-triton==3.4.0+gitf7888497
       - pytz==2025.2
       - pyyaml==6.0.2
       - rdkit==2023.9.5
@@ -176,11 +177,13 @@ dependencies:
       - statsmodels==0.14.5
       - sympy==1.14.0
       - threadpoolctl==3.6.0
-      - torch>=2.4
+      - torch==2.9.0.dev20250827+cu129
+      - torch-cluster==1.6.3+pt22cu118
       - torch-geometric==2.6.1
       - torchmetrics==1.8.2
-      - torchvision>=0.19
+      - torchvision==0.24.0.dev20250827+cu129
       - tqdm==4.66.2
+      - triton==2.2.0
       - typing-extensions==4.14.1
       - typing-inspection==0.4.2
       - tzdata==2025.2
