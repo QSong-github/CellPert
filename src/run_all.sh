@@ -1,20 +1,20 @@
 #!/bin/bash
 
 # Train once if no checkpoint is present, then predict on all 14 Mini Tahoe plates.
-# Usage: ./run_all.sh
-# Paths below are relative to the repository root; adjust DATA_DIR if the data
-# is stored elsewhere.
+# Usage, from the repository root:  bash src/run_all.sh
+# Every path below is relative to the repository root; adjust DATA_DIR if the
+# data is stored elsewhere.
 
 # ==================== configuration ====================
 DATA_DIR="./data"
-TRAIN_DATA="${DATA_DIR}/merged_all_965_with_morgan.h5ad"
+TRAIN_DATA="${DATA_DIR}/lincs/merged_all_965_with_morgan.h5ad"
 TEST_DATA_DIR="${DATA_DIR}/minitahoe"
-MODEL_PATH="./best_gin_vae_model_node_level.pth"
+MODEL_PATH="./src/best_gin_vae_model_node_level.pth"
 
 # ==================== train if needed ====================
 if [ ! -f "${MODEL_PATH}" ]; then
     echo "Training the model..."
-    python main.py \
+    python src/main.py \
         --train_data_path "${TRAIN_DATA}" \
         --train_flag \
         --epochs 5 \
@@ -40,7 +40,7 @@ for i in {1..14}; do
         continue
     fi
 
-    python main.py \
+    python src/main.py \
         --train_data_path "${TRAIN_DATA}" \
         --test_data_path "${TEST_DATA}" \
         --test_dataset_id ${i} \

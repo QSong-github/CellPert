@@ -100,10 +100,25 @@ for that plate to within 1e-4: mean squared error 39.887294 against 39.887208, P
 0.350311 against 0.350321, cosine similarity 0.411403 against 0.411403 and Spearman
 0.156228 against 0.156204.
 
-### Training
+### Running the model
+
+Every command below is run from the repository root, and every path in `run_all.sh`
+and in the `main.py` defaults is relative to it. Put the data and the weights in place
+first, as described under Datasets & Model Weights.
+
+```bash
+# Predict on all fourteen Mini Tahoe plates with the released weights.
+# Training is skipped automatically when src/best_gin_vae_model_node_level.pth exists.
+bash src/run_all.sh
+
+# Or a single plate, using the default paths
+python src/main.py --test_flag --test_dataset_id 1 --batch_size 64
+```
 
 `run_all.sh` trains for five epochs, which is the setting the released weights were
-produced with, and then predicts on all fourteen plates.
+produced with, and then predicts on all fourteen plates. The reference latents are
+computed on the first run and cached in `output/reference_latents.pkl`, so that first
+run takes noticeably longer than the ones after it.
 
 
 ---
@@ -217,7 +232,7 @@ model.load_state_dict(torch.load('./src/best_gin_vae_model_node_level.pth', map_
 model.eval()
 
 # 2. Load dataset
-lincs_path = './data/merged_all_965_with_morgan.h5ad'
+lincs_path = './data/lincs/merged_all_965_with_morgan.h5ad'
 lincs_adata = sc.read_h5ad(lincs_path)
 lincs_dataset = ChunkedGeneGraphDataset([lincs_path], split='test')
 

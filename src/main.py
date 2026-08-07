@@ -578,7 +578,7 @@ def train_gin_vae(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Arguments for training GIN-VAE")
-    parser.add_argument("--train_data_path", type=str, default=['./data/merged_all_965_with_morgan.h5ad'])
+    parser.add_argument("--train_data_path", type=str, default=['./data/lincs/merged_all_965_with_morgan.h5ad'])
     parser.add_argument("--test_data_path", type=str, default='./data/minitahoe/p1_with_morgan.h5ad')
     parser.add_argument("--ref_save_path", type=str, default='./output/reference_latents.pkl')
     parser.add_argument("--output_dir", type=str, default='./output')
@@ -595,7 +595,7 @@ if __name__ == "__main__":
     parser.add_argument("--weight_decay", type=float, default=1e-5)
     parser.add_argument("--train_flag", action='store_true', help="Enable training mode")
     parser.add_argument("--from_ckpt", action='store_true', help="Load from checkpoint")
-    parser.add_argument("--ckpt_path", type=str, default='./best_gin_vae_model_node_level.pth')
+    parser.add_argument("--ckpt_path", type=str, default='./src/best_gin_vae_model_node_level.pth')
     parser.add_argument("--test_flag", action='store_true', help="Enable testing mode")
     parser.add_argument("--test_dataset_id", type=int, default=1, help="Test dataset plate ID")
     
