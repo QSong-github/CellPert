@@ -85,10 +85,16 @@ for installation: the nightly wheels it pins are published on the PyTorch nightl
 rather than on PyPI, so installing from it requires that index and will not resolve on
 a system where those builds are unavailable.
 
-Three entries present in the exact record are absent from `environment.yml`:
-`pytorch-triton` and `triton`, which pip installs automatically as dependencies of the
-selected PyTorch build and which conflict with one another when pinned, and
+The entries absent from `environment.yml` but present in the exact record are all
+dependencies that pip resolves on its own for the PyTorch build it selects: `pytorch-triton`
+and `triton`, which conflict with one another when both are pinned, the twenty-six
+`nvidia-*` CUDA runtime libraries, whose pinned versions do not match a PyTorch build
+other than the nightly one and cause `libtorch_cuda.so: undefined symbol` at import, and
 `torch-cluster`, which the code does not import.
+
+The environment file was built from scratch on a clean prefix to check that it resolves:
+`conda env create` completed, `torch` 2.9.1 and `torch_geometric` 2.6.1 imported, and the
+modules under `src/` imported without error.
 
 
 ---
