@@ -258,7 +258,7 @@ print(f'Predicted expression shape: {predicted_expression.shape}')
 
 ## Tutorial
 
-[`tutorial.ipynb`](tutorial.ipynb) walks through a full CellPert use case end-to-end: download the data + pretrained weights from HuggingFace, load the GINVAE, build LINCS reference latents, predict perturbation responses on a Tahoe plate, evaluate with Pearson / Spearman / DEG-delta on paired control–perturb samples, and place the output on the target scale with the two-parameter affine diagnostic described in section 6.
+[`tutorial.ipynb`](tutorial.ipynb) walks through a full CellPert use case end-to-end: download the data + pretrained weights from HuggingFace, load the GINVAE, build LINCS reference latents, predict perturbation responses on a Tahoe plate, evaluate with Pearson / Spearman / DEG-delta on paired control–perturb samples, place the output on the target scale with the two-parameter affine diagnostic of section 6, and reproduce the latent-space alignment analysis behind Figure 3b and Supplementary Figure S1 in section 7. Section 7 additionally needs `umap-learn`, which is not part of `environment.yml`.
 
 ---
 
