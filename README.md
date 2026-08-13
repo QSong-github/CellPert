@@ -1,4 +1,4 @@
-# CellPert: Graph Variational Learning with Biological Priors Enables Cross- platform Perturbation Prediction
+# CellPert: Graph Variational Learning with Biological Priors Enables Cross-Platform Perturbation Prediction
 
 CellPert is a graph neural network–based variational autoencoder framework for predicting single-cell transcriptomic responses to chemical perturbations. By modeling gene–gene interaction networks with Graph Isomorphism Networks (GIN) and a VAE latent space, CellPert transfers perturbation effects from reference datasets to unseen cell states, enabling a suite of downstream biological analyses.
 
