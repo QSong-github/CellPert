@@ -258,7 +258,19 @@ print(f'Predicted expression shape: {predicted_expression.shape}')
 
 ## Tutorial
 
-[`tutorial.ipynb`](tutorial.ipynb) walks through a full CellPert use case end-to-end: download the data + pretrained weights from HuggingFace, load the GINVAE, build LINCS reference latents, predict perturbation responses on a Tahoe plate, evaluate with Pearson / Spearman / DEG-delta on paired control–perturb samples, place the output on the target scale with the two-parameter affine diagnostic of section 6, and reproduce the latent-space alignment analysis behind Figure 3b and Supplementary Figure S1 in section 7. Section 7 additionally needs `umap-learn`, which is not part of `environment.yml`.
+Three notebooks, each self-contained and each committed with the outputs of a real run on
+the released weights.
+
+* [`tutorial.ipynb`](tutorial.ipynb) — the end-to-end use case: download the data and
+  pretrained weights from HuggingFace, load the GINVAE, build the LINCS reference latents,
+  predict perturbation responses on a Tahoe plate, and evaluate with Pearson / Spearman /
+  DEG-delta on paired control–perturb samples.
+* [`tutorial_calibration.ipynb`](tutorial_calibration.ipynb) — placing predictions on the
+  target output scale with a two-parameter affine fitted on one plate and frozen, and the
+  two checks that belong with it.
+* [`tutorial_alignment.ipynb`](tutorial_alignment.ipynb) — how far apart LINCS and Mini
+  Tahoe sit before and after the encoder, plate by plate, plus a UMAP of both spaces.
+  Needs `umap-learn`, which is not part of `environment.yml`.
 
 ---
 
