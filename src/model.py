@@ -352,6 +352,9 @@ class GINVAE(nn.Module):
         # Cache for reference latents (separate control and perturb)
         self._ctrl_ref_cache = None
         self._ptrb_ref_cache = None
+        # Displacement of each individual compound, keyed by Morgan fingerprint.
+        # Only populated when the reference is processed with per_compound=True.
+        self._delta_by_fp = {}
         
         # Verbosity control
         self.verbose = verbose
@@ -471,6 +474,7 @@ class GINVAE(nn.Module):
                             'celltype': str(ref_data.celltype) if hasattr(ref_data, 'celltype') and ref_data.celltype is not None else 'unknown',
                             'main_ptrb': str(ref_data.main_ptrb) if hasattr(ref_data, 'main_ptrb') and ref_data.main_ptrb is not None else 'none',
                             'sub_ptrb': str(ref_data.sub_ptrb) if hasattr(ref_data, 'sub_ptrb') and ref_data.sub_ptrb is not None else 'none',
+                            'morgan_fp': str(ref_data.morgan_fp) if hasattr(ref_data, 'morgan_fp') and ref_data.morgan_fp is not None else None,
                             'num_nodes': x.size(0),
                             'num_edges': edge_index.size(1) if edge_index is not None else 0
                         }
@@ -594,7 +598,8 @@ class GINVAE(nn.Module):
             self._print(f"Error saving reference data: {e}", force=True)
             return False
 
-    def load_and_compute_bio_context(self, save_path, group_type=None, group_name=None, max_ptrb_samples=None):
+    def load_and_compute_bio_context(self, save_path, group_type=None, group_name=None, max_ptrb_samples=None,
+                                     per_compound=False):
         """
         Load processed reference data and compute biological context based on group criteria.
         Returns both control and perturb references separately for the correct formula.
@@ -787,6 +792,39 @@ class GINVAE(nn.Module):
         # Cache both references for prediction
         self._ctrl_ref_cache = latent_ctrl_ref
         self._ptrb_ref_cache = latent_ptrb_ref
+
+        # One displacement per compound, in addition to the shared one above. The two
+        # differ only in how the reference means are grouped: the shared displacement
+        # averages every control and every perturbed sample, while this averages within
+        # one compound at a time. Compounds whose controls are absent fall back to the
+        # shared control mean, and a compound the reference never saw is handled at
+        # prediction time by falling back to the shared displacement.
+        self._delta_by_fp = {}
+        if per_compound:
+            fp_of = lambda s: (s.get('metadata') or {}).get('morgan_fp')
+            if all(fp_of(s) is None for s in ptrb_samples):
+                self._print("per_compound was requested but the cached reference carries no "
+                            "morgan_fp; reprocess with force_reprocess=True to enable it",
+                            force=True)
+            else:
+                ctrl_by_fp = {}
+                for s in ctrl_samples:
+                    f = fp_of(s)
+                    if f is not None:
+                        ctrl_by_fp.setdefault(f, []).append(
+                            torch.tensor(s['graph_z'], dtype=torch.float32).squeeze(0))
+                ptrb_by_fp = {}
+                for s in ptrb_samples:
+                    f = fp_of(s)
+                    if f is not None:
+                        ptrb_by_fp.setdefault(f, []).append(
+                            torch.tensor(s['graph_z'], dtype=torch.float32).squeeze(0))
+                shared_ctrl = latent_ctrl_ref.squeeze(0).cpu()
+                for f, rows in ptrb_by_fp.items():
+                    c = (torch.mean(torch.stack(ctrl_by_fp[f]), dim=0)
+                         if f in ctrl_by_fp else shared_ctrl)
+                    self._delta_by_fp[f] = torch.mean(torch.stack(rows), dim=0) - c
+                self._print("Per-compound displacements: %d compounds" % len(self._delta_by_fp))
         
         # Prepare return information
         computation_info = {
@@ -816,7 +854,8 @@ class GINVAE(nn.Module):
 
     # convenience wrapper for the whole reference-dataset pipeline
     def process_reference_dataset(self, x_ref_dataset, save_path=None, group_type=None, group_name=None, 
-                                max_ptrb_samples=None, max_samples_per_batch=100, force_reprocess=False):
+                                max_ptrb_samples=None, max_samples_per_batch=100, force_reprocess=False,
+                                per_compound=False):
         """Process the reference dataset and compute the biological context.
 
         If save_path does not exist the reference is processed and written there first.
@@ -852,10 +891,11 @@ class GINVAE(nn.Module):
         
         # Compute biological context
         return self.load_and_compute_bio_context(
-            save_path, group_type, group_name, max_ptrb_samples
+            save_path, group_type, group_name, max_ptrb_samples, per_compound=per_compound
         )
     
-    def predict(self, data, latent_ctrl_ref=None, latent_ptrb_ref=None):
+    def predict(self, data, latent_ctrl_ref=None, latent_ptrb_ref=None,
+                displacement='global'):
         """
         Enhanced prediction method using the correct formula:
         latent_perturb_query = latent_control_query + (latent_perturb_ref - latent_control_ref)
@@ -864,6 +904,11 @@ class GINVAE(nn.Module):
             data: Query data (single graph or batch)
             latent_ctrl_ref: Control reference [1, latent_dim] (if None, use cached)
             latent_ptrb_ref: perturb reference [1, latent_dim] (if None, use cached)
+            displacement: 'global' applies one displacement to every cell, which is the
+                released behaviour and follows scGen. 'per_compound' applies that
+                compound's own displacement instead, falling back to the shared one for
+                a compound the reference never saw. The reference must have been
+                processed with per_compound=True for this to have any effect.
         """
         # Use provided references or cached references
         if latent_ctrl_ref is None:
@@ -904,7 +949,38 @@ class GINVAE(nn.Module):
             latent_ptrb_ref_expanded = latent_ptrb_ref.expand(num_graphs, -1)  # [num_graphs, latent_dim]
             
             # Apply the biological perturbation effect
-            biological_context = latent_ptrb_ref_expanded - latent_ctrl_ref_expanded  # [num_graphs, latent_dim]
+            shared = latent_ptrb_ref_expanded - latent_ctrl_ref_expanded  # [num_graphs, latent_dim]
+            if displacement == 'per_compound' and self._delta_by_fp:
+                fps = getattr(data, 'morgan_fp', None)
+                if fps is None or (isinstance(fps, list) and all(f is None for f in fps)):
+                    # Processed graph caches written before morgan_fp was carried through
+                    # have no fingerprint, and silently falling back would look like the
+                    # option had no effect. Say so instead.
+                    if not getattr(self, '_warned_no_fp', False):
+                        self._print("per_compound requested but the query graphs carry no "
+                                    "morgan_fp; delete the processed/ directory next to the "
+                                    "h5ad so the graphs are rebuilt, otherwise the shared "
+                                    "displacement is used", force=True)
+                        self._warned_no_fp = True
+                    biological_context = shared
+                else:
+                    if isinstance(fps, str):
+                        fps = [fps]
+                    rows, missing = [], 0
+                    for j, f in enumerate(fps):
+                        d = self._delta_by_fp.get(str(f))
+                        if d is None:
+                            rows.append(shared[j]); missing += 1
+                        else:
+                            rows.append(d.to(shared.device))
+                    biological_context = torch.stack(rows)
+                    self._last_fallback_count = missing
+            elif displacement == 'per_compound':
+                self._print("per_compound requested but no per-compound displacements are "
+                            "available; using the shared displacement", force=True)
+                biological_context = shared
+            else:
+                biological_context = shared
             graph_z_ptrb_qry = graph_z_ctrl_qry + biological_context  # [num_graphs, latent_dim]
             
             # Decode predicted expression using perturbed graph representations

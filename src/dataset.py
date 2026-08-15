@@ -170,6 +170,10 @@ class ChunkedGeneGraphDataset(Dataset):
             obs_celltype = adata.obs['cell_type'].values if 'cell_type' in adata.obs.columns else None
             obs_main_ptrb = adata.obs['main_ptrb'].values if 'main_ptrb' in adata.obs.columns else None
             obs_sub_ptrb = adata.obs['sub_ptrb'].values if 'sub_ptrb' in adata.obs.columns else None
+            # The Morgan fingerprint is the only compound identifier the LINCS and the
+            # Mini Tahoe files share, so it is what the per-compound displacement is
+            # keyed on. It is carried through as a string and never used as a feature.
+            obs_morgan_fp = adata.obs['morgan_fp'].values if 'morgan_fp' in adata.obs.columns else None
             
             g_mean = torch.tensor(expr.mean(axis=0), dtype=torch.float).reshape(-1, 1)
             g_var = torch.tensor(expr.var(axis=0), dtype=torch.float).reshape(-1, 1)
@@ -190,6 +194,7 @@ class ChunkedGeneGraphDataset(Dataset):
                 data.celltype = obs_celltype[i] if obs_celltype is not None else "unknown"
                 data.main_ptrb = obs_main_ptrb[i] if obs_main_ptrb is not None else "none"
                 data.sub_ptrb = obs_sub_ptrb[i] if obs_sub_ptrb is not None else "none"
+                data.morgan_fp = str(obs_morgan_fp[i]) if obs_morgan_fp is not None else None
                 
                 if self.pre_transform:
                     data = self.pre_transform(data)

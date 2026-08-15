@@ -175,7 +175,9 @@ def evaluate_perturbation_prediction(model, test_dataset, latent_ctrl_ref, laten
                 
                 # Predict perturbation effect on control samples
                 try:
-                    predicted_ptrb_exp, pred_mask = model.predict(ctrl_batch, latent_ctrl_ref, latent_ptrb_ref)
+                    predicted_ptrb_exp, pred_mask = model.predict(
+                        ctrl_batch, latent_ctrl_ref, latent_ptrb_ref,
+                        displacement=getattr(args, 'displacement', 'global'))
                     
                     # Process ground truth stimulated samples
                     ptrb_loader = DataLoader(ptrb_batch_data, batch_size=len(ptrb_batch_data), shuffle=False)
@@ -512,7 +514,8 @@ def train_gin_vae(args):
             save_path=args.ref_save_path,
             group_type=None,
             group_name=None,
-            force_reprocess=False  # skip the work if the file already exists
+            force_reprocess=False,  # skip the work if the file already exists
+            per_compound=(args.displacement == 'per_compound')
         )
         
         if latent_ctrl_ref is None or latent_ptrb_ref is None:
@@ -600,6 +603,16 @@ if __name__ == "__main__":
     parser.add_argument("--test_dataset_id", type=int, default=1, help="Test dataset plate ID")
     
     parser.add_argument("--graph_kl_weight", type=float, default=0.1, help="Weight for graph-level KL divergence")
+    parser.add_argument("--displacement", type=str, default="global",
+                        choices=["global", "per_compound"],
+                        help="How the latent displacement is formed. 'global' uses one "
+                             "displacement shared by every perturbation, which follows "
+                             "scGen and is what the released weights were evaluated with. "
+                             "'per_compound' uses that compound's own displacement, "
+                             "falling back to the shared one for a compound the reference "
+                             "never saw. Switching to 'per_compound' requires the reference "
+                             "to be rebuilt once, so delete the file at --ref_save_path or "
+                             "point it somewhere new.")
     
     args = parser.parse_args()
     

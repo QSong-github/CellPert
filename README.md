@@ -100,6 +100,33 @@ for that plate to within 1e-4: mean squared error 39.887294 against 39.887208, P
 0.350311 against 0.350321, cosine similarity 0.411403 against 0.411403 and Spearman
 0.156228 against 0.156204.
 
+### The latent displacement
+
+CellPert transfers a perturbation by adding a displacement in latent space to the encoded
+control cell and decoding the result. Two ways of forming that displacement are
+implemented, and `--displacement` selects between them.
+
+```bash
+# One displacement shared by every perturbation, following scGen. This is the default
+# and it is what the released weights were evaluated with.
+python src/main.py --test_flag --test_dataset_id 1 --displacement global
+
+# That compound's own displacement, taken from the reference set and keyed on the Morgan
+# fingerprint. Compounds the reference never saw fall back to the shared displacement.
+python src/main.py --test_flag --test_dataset_id 1 --displacement per_compound
+```
+
+`per_compound` needs the fingerprint to be carried on each graph, which older processed
+caches do not have. Delete the `processed/` directory next to the h5ad files and the
+reference file at `--ref_save_path` once, so both are rebuilt; the code prints a warning
+rather than falling back silently if it finds them missing.
+
+The two are far apart as vectors and close in their effect. On the released checkpoint the
+reference holds 7045 compounds; the shared displacement has norm 0.0157 while the
+per-compound ones average 0.2249, and their mean cosine with the shared direction is
+0.0848. Predictions nevertheless differ by at most 1.6e-02 on a batch, and plate 1 scores
+move from MSE 39.8876, Pearson 0.35025 to MSE 39.8879, Pearson 0.35028.
+
 ### Running the model
 
 Every command below is run from the repository root, and every path in `run_all.sh`
